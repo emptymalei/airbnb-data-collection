@@ -108,6 +108,9 @@ class ABSurvey():
             return False
 
     def listing_from_search_page_json(self, json, room_id):
+        """
+        Some fields occasionally extend beyond the varchar(255) limit.
+        """
         try:
             listing = ABListing(self.config, room_id, self.survey_id)
             # listing
@@ -155,20 +158,41 @@ class ABSurvey():
             else:
                 listing.longitude = None
             # The coworker_hosted item is missing or elsewhere
-            listing.coworker_hosted = json_listing["coworker_hosted"] \
-                    if "coworker_hosted" in json_listing else None
+            if "coworker_hosted" in json_listing:
+                listing.coworker_hosted = json_listing["coworker_hosted"]
+            else:
+                listing.coworker_hosted = None
             # The extra_host_language item is missing or elsewhere
-            listing.extra_host_languages = json_listing["extra_host_languages"] \
-                if "extra_host_languages" in json_listing else None
-            listing.name = json_listing["name"] \
-                    if "name" in json_listing else None
-            listing.property_type = json_listing["property_type"] \
-                    if "property_type" in json_listing else None
+            if "extra_host_languages" in json_listing:
+                ehl = json_listing["extra_host_languages"]
+                if len(ehl) > 254:
+                    listing.extra_host_languages = ehl[:254]
+                else:
+                    listing.extra_host_languages = ehl
+            else:
+                listing.extra_host_languages = None
+            if "name" in json_listing:
+                lname = json_listing["name"]
+                if len(lname) > 254:
+                    listing.name = lname[:254]
+                else:
+                    listing.name = lname
+            else:
+                listing.name = None
+            if "property_type" in json_listing:
+                pt = json_listing["property_type"]
+                if len(pt) > 254:
+                    listing.property_type = pt[:254]
+                else:
+                    listing.property_type = pt
+            else:
+                listing.property_type = None
             # pricing
             json_pricing = json["pricing_quote"]
             listing.price = json_pricing["rate"]["amount"] if "rate" in json_pricing else None
             listing.currency = json_pricing["rate"]["currency"] if "rate" in json_pricing else None
             listing.rate_type = json_pricing["rate_type"] if "rate_type" in json_pricing else None
+
             return listing
         except:
             logger.exception("Error in survey.listing_from_search_page_json: returning None")
@@ -441,6 +465,8 @@ class ABSurveyByBoundingBox(ABSurvey):
                 # progress is [1,0] then the subtree for [0,0] is completed. If
                 # progress is [0,0][0,1] then the subtree is not completed.
                 # TODO: use the same technique as the loop, below
+                if not quadtree_node:
+                    return
                 if quadtree_node[-1] == [0, 0]:
                     quadtree_node[-1] = [0, 1]
                 elif quadtree_node[-1] == [0, 1]:
@@ -541,20 +567,20 @@ class ABSurveyByBoundingBox(ABSurvey):
                     logger.debug("API key found: using API search at %s",
                                  self.config.URL_API_SEARCH_ROOT)
                     params = {}
-                    params["version"] = "1.3.5"
+                    # params["version"] = "1.3.5"
                     params["_format"] = "for_explore_search_web"
                     params["experiences_per_grid"] = str(20)
                     params["items_per_grid"] = str(18)
                     params["guidebooks_per_grid"] = str(20)
-                    params["auto_ib"] = str(True)
-                    params["fetch_filters"] = str(True)
-                    params["has_zero_guest_treatment"] = str(True)
-                    params["is_guided_search"] = str(True)
-                    params["is_new_cards_experiment"] = str(True)
-                    params["luxury_pre_launch"] = str(False)
-                    params["query_understanding_enabled"] = str(True)
-                    params["show_groupings"] = str(True)
-                    params["supports_for_you_v3"] = str(True)
+                    # params["auto_ib"] = str(True)
+                    # params["fetch_filters"] = str(True)
+                    # params["has_zero_guest_treatment"] = str(True)
+                    # params["is_guided_search"] = str(True)
+                    # params["is_new_cards_experiment"] = str(True)
+                    # params["luxury_pre_launch"] = str(False)
+                    # params["query_understanding_enabled"] = str(True)
+                    # params["show_groupings"] = str(True)
+                    # params["supports_for_you_v3"] = str(True)
                     params["timezone_offset"] = "-240"
                     params["metadata_only"] = str(False)
                     params["is_standard_search"] = str(True)
@@ -568,10 +594,10 @@ class ABSurveyByBoundingBox(ABSurvey):
                     params["sw_lat"] = str(rectangle[2])
                     params["sw_lng"] = str(rectangle[3])
                     params["search_by_map"] = str(True)
-                    params["screen_size"] = "medium"
-                    params["_intents"] = "p1"
+                    # params["screen_size"] = "medium"
+                    # params["_intents"] = "p1"
                     params["key"] = self.config.API_KEY
-                    params["client_session_id"] = self.config.CLIENT_SESSION_ID
+                    # params["client_session_id"] = self.config.CLIENT_SESSION_ID
                     # params["zoom"] = str(True)
                     # params["federated_search_session_id"] = "45de42ea-60d4-49a9-9335-9e52789cd306"
                     # params["query"] = "Lisbon Portugal"
@@ -830,14 +856,17 @@ class ABSurveyByBoundingBox(ABSurvey):
         if self.logged_progress:
             # Compare the current node to the logged progress node by
             # converting into strings, then comparing the integer value.
-            if (self.room_types.index(room_type)
-                < self.room_types.index(self.logged_progress["room_type"])):
-                subtree_previously_completed = True
-                return subtree_previously_completed
-            if (self.room_types.index(room_type)
-                > self.room_types.index(self.logged_progress["room_type"])):
-                subtree_previously_completed = False
-                return subtree_previously_completed
+            logger.debug("room_type=%s, self.logged_progress['room_type']=%s",
+                             room_type, self.logged_progress["room_type"])
+            if self.config.SEARCH_DO_LOOP_OVER_ROOM_TYPES == 1:
+                if (self.room_types.index(room_type)
+                    < self.room_types.index(self.logged_progress["room_type"])):
+                    subtree_previously_completed = True
+                    return subtree_previously_completed
+                if (self.room_types.index(room_type)
+                    > self.room_types.index(self.logged_progress["room_type"])):
+                    subtree_previously_completed = False
+                    return subtree_previously_completed
             common_length = min(len(quadtree_node),
                                 len(self.logged_progress["quadtree"]))
             s_this_quadrant = ''.join(str(quadtree_node[i][j])
